@@ -10,12 +10,12 @@
 
 Las mejoras clave del Módulo 3 son:
 
-| Componente | Descripción de la Mejora |
-| :--- | :--- |
-| **Control de Acceso (Roles)** | Implementación de `AccessControl` de OpenZeppelin para delegar permisos de forma granular, incluyendo `CAP_MANAGER_ROLE`, `TOKEN_MANAGER_ROLE`, y `PAUSE_MANAGER_ROLE`. |
-| **Oráculos de Chainlink** | Integración de Chainlink Data Feeds para convertir el valor de ETH a USD, permitiendo que el límite global (`BANK_CAP_USD`) se aplique en dólares, y no en unidades de ETH volátiles. | 
-| **Soporte Multi-token** | El contrato ahora soporta depósitos y retiros de tokens ERC-20, utilizando un catálogo administrado (`s_tokenCatalog`) y mappings anidados (`balances`) para llevar la contabilidad por token. | 
-| **Seguridad de Emergencia** | Herencia del contrato `Pausable` de OpenZeppelin, gestionado por el `PAUSE_MANAGER_ROLE`, para detener las funciones críticas (`deposit`, `withdraw`) ante amenazas de seguridad o fallos de oráculo. | atrón de Seguridad. |
+| Componente | Descripción de la Mejora | Fuente |
+| :--- | :--- | :--- |
+| **Control de Acceso (Roles)** | Implementación de `AccessControl` de OpenZeppelin para delegar permisos de forma granular, incluyendo `CAP_MANAGER_ROLE`, `TOKEN_MANAGER_ROLE`, y `PAUSE_MANAGER_ROLE`. | Requisito M3. |
+| **Oráculos de Chainlink** | Integración de Chainlink Data Feeds para convertir el valor de ETH a USD, permitiendo que el límite global (`BANK_CAP_USD`) se aplique en dólares, y no en unidades de ETH volátiles. | Requisito M3. |
+| **Soporte Multi-token** | El contrato ahora soporta depósitos y retiros de tokens ERC-20, utilizando un catálogo administrado (`s_tokenCatalog`) y mappings anidados (`balances`) para llevar la contabilidad por token. | Requisito M3. |
+| **Seguridad de Emergencia** | Herencia del contrato `Pausable` de OpenZeppelin, gestionado por el `PAUSE_MANAGER_ROLE`, para detener las funciones críticas (`deposit`, `withdraw`) ante amenazas de seguridad o fallos de oráculo. | Patrón de Seguridad. |
 
 ---
 
@@ -62,86 +62,60 @@ Todas las interacciones se realizan a través de la interfaz de Remix o Ethersca
 
 ---
 
-## 4. Casos de Prueba y API del Contrato
+## 4. Casos de Prueba (Módulo 3)
 
 <details>
 <summary><strong>🧪 Casos de Prueba Detallados (Módulo 3)</strong></summary>
 
-### Configuración de Pruebas
-
-* **Contrato:** `KipuBankV2.sol`
-* **Red de Prueba:** Sepolia Testnet
-* **Versión de Solidity:** `^0.8.26`
-* **Cuentas de Prueba:**
-    * **ADMIN (Desplegador):** (Tu cuenta MetaMask). Posee `DEFAULT_ADMIN_ROLE`, `CAP_MANAGER_ROLE`, `TOKEN_MANAGER_ROLE`, y `PAUSE_MANAGER_ROLE`.
-    * **USUARIO B:** Otra cuenta con Sepolia ETH para actuar como usuario estándar.
-* **Parámetros de Despliegue Asumidos:**
-    * **Oráculo ETH/USD (Sepolia):** `0x694AA1769357215Ef4bE215cd2aa0325eEba1cda`
-    * **MAX_WITHDRAWAL_PER_TX:** `1000000000000000000` (1 ETH en Wei)
-    * **BANK_CAP_USD:** `1000000000000000000000000` ($1M USD con $10^8$ decimales)
-
+### Contexto de Prueba
+| Contexto | Descripción |
+| :--- | :--- |
+| Cuentas | ADMIN (Tu cuenta, posee todos los roles) y USUARIO B (Otra cuenta con fondos de prueba). |
+| Token de Prueba | Usaremos un token de prueba (Mock Token) con 18 decimales, registrado bajo el oráculo DAI/USD de Sepolia. |
+| Límite de Retiro | `MAX_WITHDRAWAL_PER_TX`: `1000000000000000000` (1 ETH en Wei, variable `immutable`). |
+| Límite Global | `BANK_CAP_USD`: $1,000,000 USD (variable `constant` con $10^8$ decimales). |
 <br>
 
 <details>
-<summary><strong>FASE 1: Verificación de Variables y Oráculos (Lectura)</strong></summary>
+<summary><strong>FASE 1: Validación del Control de Acceso (TOKEN_MANAGER_ROLE)</strong></summary>
+<p>Objetivo: Verificar que solo el <code>TOKEN_MANAGER_ROLE</code> (ADMIN) puede agregar tokens al catálogo. Esto valida el control de acceso y las Declaraciones de Tipos (struct <code>TokenData</code>).</p>
 
-| ID | Requisito a Probar | Función/Variable | Entrada | Resultado Esperado | Verificación |
+| ID | Función/Rol a Probar | Cuenta | Entradas Requeridas | Resultado Esperado | Verificación |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| 1.1 | Variable `constant` | `BANK_CAP_USD` (view) | N/A | Debe mostrar `1000000000000000000000000` (valor fijo de $1M). | Confirma el uso de `constant`. |
-| 1.2 | Variable `immutable` | `MAX_WITHDRAWAL_PER_TX` (view) | N/A | Debe mostrar `1000000000000000000` (1 ETH en Wei). | Confirma el uso de `immutable`. |
-| 1.3 | Instancia de Oráculo | `getEthPriceInUsd()` (view) | N/A | Debe retornar un número grande (ej., 3000 * $10^8$). | Confirma la conexión con el Data Feed de Chainlink. |
-
+| 1.1 | `addSupportedToken` (Restringida) | ADMIN | `tokenAddress`: `0x1111111111111111111111111111111111111111` (Dirección de Prueba) <br> `priceFeedAddress`: `0x1486940d5E31A21e25e22C66e92751505A4b23b8` (Oráculo DAI/USD Sepolia) <br> `decimals`: 18 | Éxito. La transacción es confirmada. | Se emite el evento `TokenSupported`. Confirma que el ADMIN puede ejecutar funciones restringidas. |
+| 1.2 | `addSupportedToken` (Violación de Rol) | USUARIO B | Mismos parámetros que 1.1. | REVERTIR. | La transacción falla con un error de `AccessControl` o un error personalizado `Bank__Unauthorized`. |
 </details>
 
 <details>
-<summary><strong>FASE 2: Control de Acceso y Pausabilidad (PAUSE_MANAGER_ROLE)</strong></summary>
-<p>Este test verifica el "interruptor de emergencia" (Fail-Safe). Se debe usar la cuenta ADMIN.</p>
+<summary><strong>FASE 2: Conversión de Valores y Límite Global (Oráculos)</strong></summary>
+<p>Objetivo: Probar la función <code>deposit()</code>. La lógica de negocio ahora debe usar Chainlink para convertir ETH/Wei ($10^{18}$ decimales) a USD ($10^8$ decimales) y aplicar el límite global.</p>
 
-| ID | Paso | Función/Acción | Entrada | Resultado Esperado | Verificación |
+| ID | Función a Probar | Cuenta | Acción y Valor de Entrada | Resultado Esperado | Verificación Crítica |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| 2.1 | Activar Pausa | `pause()` | N/A | Transacción Exitosa. | El estado `paused` es ahora `true`. Confirma que `PAUSE_MANAGER_ROLE` funciona. |
-| 2.2 | Prueba de Bloqueo | `deposit()` | Valor: 0.01 ETH | Transacción debe REVERTIR. | Revert: El error debe indicar que la función falló debido a la pausa (Error de `Pausable`/`whenNotPaused`). |
-| 2.3 | Desactivar Pausa | `unpause()` | N/A | Transacción Exitosa. | El estado `paused` es ahora `false`. |
-| 2.4 | Prueba de Continuidad | `deposit()` | Valor: 0.01 ETH | Transacción Exitosa. | El depósito funciona, confirmando que la seguridad fue restaurada. |
-
+| 2.1 | `deposit()` (Éxito) | USUARIO B | `Value`: 0.1 ETH (Gas: Estándar) | Éxito. | Se emite `DepositSuccessful`. <br> Verificar `getDepositCount()` (debe aumentar). <br> Verificar `balances[USUARIO B][address(0)]` (Mapeo anidado). |
+| 2.2 | `deposit()` (Fallo: Límite Global) | USUARIO B | `Value`: 5000 ETH (Un valor que exceda $1M USD, asumiendo un precio ETH alto) | REVERTIR. | La transacción falla con el error personalizado `Bank__DepositExceedsCap`. Confirma que el oráculo de Chainlink y la Función de conversión de decimales funcionan. |
 </details>
 
 <details>
-<summary><strong>FASE 3: Soporte Multi-token (TOKEN_MANAGER_ROLE)</strong></summary>
-<p>Este test valida la creación y el uso del Catálogo Multi-token (<code>s_tokenCatalog</code>).</p>
+<summary><strong>FASE 3: Interacción Multi-Token (Mappings Anidados y CEI)</strong></summary>
+<p>Objetivo: Usar el token registrado en el Catálogo (<code>0x111...111</code>) para probar el sistema de contabilidad multi-token, basado en Mappings anidados.</p>
 
-| ID | Paso | Función | Parámetros (Inputs) | Resultado Esperado | Verificación |
+| ID | Función a Probar | Cuenta | Entradas Requeridas | Resultado Esperado | Verificación Crítica |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| 3.1 | Registrar Token (ADMIN) | `addSupportedToken` | `tokenAddress`: `0x111...111` (Mock Token) <br> `priceFeedAddress`: `0x1486940d5E31A21e25e22C66e92751505A4b23b8` (DAI/USD Sepolia) <br> `decimals`: 18 | Transacción Exitosa. | Log: Buscar el evento `TokenSupported` con los datos del token. |
-| 3.2 | Intento de Duplicado (ADMIN) | `addSupportedToken` | Mismos parámetros que 3.1. | Transacción debe REVERTIR. | Revert: Error de `require` (ej., "Bank: Token already supported") verificando la unicidad del catálogo. |
-| 3.3 | Retiro No Soportado (USUARIO B) | `withdrawToken` | `tokenAddress`: `0x222...222` (Dirección no registrada) <br> `amount`: 1 | Transacción debe REVERTIR. | Revert: Error personalizado `Bank__TokenNotSupported`, confirmando que el check del catálogo funciona. |
-
+| 3.1 | `depositToken` | USUARIO B | `tokenAddress`: `0x111...111` <br> `amount`: `500000000000000000` (0.5 Token) | Éxito (asumiendo `approve()` previo). | Mapeo Anidado: Verificar `balances[USUARIO B][0x111...111]`. Debe ser 0.5 Token. |
+| 3.2 | `withdrawToken` (Fallo: Límite `immutable`) | USUARIO B | `tokenAddress`: `0x111...111` <br> `amount`: `2000000000000000000` (2 Token) | REVERTIR. | Falla con `Bank__WithdrawalExceedsLimit`. Confirma el cumplimiento de la variable `MAX_WITHDRAWAL_PER_TX` (`immutable`). |
+| 3.3 | `withdrawToken` (Éxito y CEI) | USUARIO B | `tokenAddress`: `0x111...111` <br> `amount`: `100000000000000000` (0.1 Token) | Éxito. | Patrón CEI: El saldo en el mapeo anidado (`balances`) se resta (Effect) antes de que se ejecute la transferencia de tokens (Interaction). Verificar que el nuevo saldo es 0.4 Token. |
 </details>
 
 <details>
-<summary><strong>FASE 4: Depósito ETH y Comprobación de Límite Global (CAP CHECK)</strong></summary>
-<p>Este test valida la Función de conversión de decimales y valores contra el <code>BANK_CAP_USD</code>.</p>
+<summary><strong>FASE 4: Pausabilidad y Mitigación DoS (PAUSE_MANAGER_ROLE)</strong></summary>
+<p>Objetivo: Probar el interruptor de emergencia (<code>Pausable</code>), que mitiga los ataques de Denegación de Servicio (DoS).</p>
 
-| ID | Paso | Función | Entrada (Value) | Resultado Esperado | Verificación |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| 4.1 | Depósito Exitoso (USUARIO B) | `deposit()` | 0.1 ether | Transacción Exitosa. | Lectura: El saldo de `balances[Usuario B][address(0)]` es 0.1 ETH (Mapeo anidado). |
-| 4.2 | Exceso de Límite (USUARIO B) | `deposit()` | Ingresar un valor que, sumado al balance actual del contrato, exceda $1M USD (el valor exacto depende del precio ETH/USD en Sepolia, generalmente requiere un gran valor, como 5000 ether). | Transacción debe REVERTIR. | Revert: Error personalizado `Bank__DepositExceedsCap`. Confirma que el oráculo y la conversión $10^{18}$ → $10^{8}$ funcionan. |
-
+| ID | Acción | Función | Cuenta | Entradas | Resultado Esperado | Verificación Crítica |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 4.1 | Activar Emergencia | `pause()` (Write Contract) | ADMIN | N/A | Transacción Exitosa. | El contrato está ahora en estado `paused`. |
+| 4.2 | Prueba de Bloqueo | `deposit()` | USUARIO B | `Value`: 0.01 ETH | REVERTIR. | Falla con un error de `Pausable` (error de `whenNotPaused`). Esto valida que el Control de Acceso y la arquitectura de seguridad detienen las funciones críticas. |
+| 4.3 | Desactivar Emergencia | `unpause()` (Write Contract) | ADMIN | N/A | Transacción Exitosa. | El contrato regresa a estado activo. |
+| 4.4 | Reanudación | `deposit()` | USUARIO B | `Value`: 0.01 ETH | Éxito. | Se confirma que el flujo de negocio se reanuda correctamente. |
 </details>
-
-<details>
-<summary><strong>FASE 5: Retiro ERC-20 (CEI y Límite Inmutable)</strong></summary>
-<p>Este test valida el cumplimiento del patrón Checks-Effects-Interactions (CEI) y el límite immutable. Asumimos que el USUARIO A tiene un saldo del token Mock (<code>0x111...111</code>) > 1 ETH, posiblemente cargado directamente para la prueba.</p>
-
-| ID | Paso | Función | Parámetros (Inputs) | Resultado Esperado | Verificación |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| 5.1 | Exceder Límite TX (USUARIO A) | `withdrawToken` | `tokenAddress`: `0x111...111` <br> `amount`: `2000000000000000000` (2 ETH) | Transacción debe REVERTIR. | Revert: Error `Bank__WithdrawalExceedsLimit`, confirmando la variable immutable. |
-| 5.2 | Retiro Seguro (USUARIO A) | `withdrawToken` | `tokenAddress`: `0x111...111` <br> `amount`: `500000000000000000` (0.5 ETH) | Transacción Exitosa. | Inspección de Lógica (CEI): El saldo del usuario en el mapeo anidado (`balances`) debe disminuir antes de que se ejecute la llamada externa `safeTransfer`. |
-
-</details>
-
-
-
-
-
 
