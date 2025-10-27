@@ -1,14 +1,16 @@
 # KipuBankV2: Plataforma de Bóveda Descentralizada Multi-Token y Multi-Rol
 
+**URL del Contrato Desplegado y verificado en Sepolia:**
+* https://sepolia.etherscan.io/address/0x1a74a3A02a1868813Bd62D74F30A63efCA584912
+* https://eth-sepolia.blockscout.com/address/0x1a74a3A02a1868813Bd62D74F30A63efCA584912?tab=contract
+* https://testnet.routescan.io/address/0x1a74a3A02a1868813Bd62D74F30A63efCA584912/contract/11155111/code
+* https://repo.sourcify.dev/11155111/0x1a74a3A02a1868813Bd62D74F30A63efCA584912
+
+---
+
 El proyecto KipuBankV2 representa la evolución a un contrato de producción a partir del contrato base KipuBank del Módulo 2. Este contrato simula una bóveda segura que gestiona depósitos en activos nativos (ETH) y tokens ERC-20, utilizando infraestructura descentralizada (Chainlink) para la validación de límites de valor.
 
 El código actualizado del contrato se encuentra en la carpeta /src.
-
-**URL del Contrato Desplegado y verificado en Sepolia:** 
-  https://sepolia.etherscan.io/address/0x1a74a3A02a1868813Bd62D74F30A63efCA584912        
-  https://eth-sepolia.blockscout.com/address/0x1a74a3A02a1868813Bd62D74F30A63efCA584912?tab=contract
-  https://testnet.routescan.io/address/0x1a74a3A02a1868813Bd62D74F30A63efCA584912/contract/11155111/code
-  https://repo.sourcify.dev/11155111/0x1a74a3A02a1868813Bd62D74F30A63efCA584912
 
 ---
 
@@ -92,60 +94,112 @@ El contrato requiere dos argumentos obligatorios en el momento del despliegue:
 
 ---
 
-## Casos de Prueba: KipuBankV2
+## Documento de Casos de Prueba: KipuBankV2
 
 <details>
-<summary><strong> Casos de Prueba detallados </strong></summary>
+<summary>Ver Plan de Pruebas Completo</summary>
 
-### Contexto de Prueba
-| Contexto | Descripción |
-| :--- | :--- |
-| Cuentas | ADMIN (Tu cuenta, posee todos los roles) y USUARIO B (Otra cuenta con fondos de prueba). |
-| Token de Prueba | Usaremos un token de prueba (Mock Token) con 18 decimales, registrado bajo el oráculo DAI/USD de Sepolia. |
-| Límite de Retiro | `MAX_WITHDRAWAL_PER_TX`: `1000000000000000000` (1 ETH en Wei, variable `immutable`). |
-| Límite Global | `BANK_CAP_USD`: $1,000,000 USD (variable `constant` con $10^8$ decimales). |
-<br>
+**Objetivo:** Verificar la implementación correcta de los patrones de seguridad (RBAC, Pausabilidad, CEI) y la lógica de negocio (Oráculos, Multi-token) según el estándar SCSVS V2 y los requisitos de V2.
 
-<details>
-<summary><strong>FASE 1: Validación del Control de Acceso (TOKEN_MANAGER_ROLE)</strong></summary>
-<p>Objetivo: Verificar que solo el <code>TOKEN_MANAGER_ROLE</code> (ADMIN) puede agregar tokens al catálogo. Esto valida el control de acceso y las Declaraciones de Tipos (struct <code>TokenData</code>).</p>
+### Configuración Inicial Asumida
 
-| ID | Función/Rol a Probar | Cuenta | Entradas Requeridas | Resultado Esperado | Verificación |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| 1.1 | `addSupportedToken` (Restringida) | ADMIN | `tokenAddress`: `0x1111111111111111111111111111111111111111` (Dirección de Prueba) <br> `priceFeedAddress`: `0x1486940d5E31A21e25e22C66e92751505A4b23b8` (Oráculo DAI/USD Sepolia) <br> `decimals`: 18 | Éxito. La transacción es confirmada. | Se emite el evento `TokenSupported`. Confirma que el ADMIN puede ejecutar funciones restringidas. |
-| 1.2 | `addSupportedToken` (Violación de Rol) | USUARIO B | Mismos parámetros que 1.1. | REVERTIR. | La transacción falla con un error de `AccessControl` o un error personalizado `Bank__Unauthorized`. |
+| Parámetro | Valor | Razón/Fuente |
+| :--- | :--- | :--- |
+| **Rol/Cuenta A** | `0x0wner...` | Administrador/Dueño. Posee todos los roles administrativos (`DEFAULT_ADMIN_ROLE`, `PAUSE_MANAGER_ROLE`, etc.). |
+| **Cuenta B** | `0xUser...` | Usuario Estándar. No tiene roles administrativos. |
+| **MAX_WITHDRAWAL_PER_TX** | `1 ETH` (10^18 Wei) | Límite inmutable de retiro por transacción. |
+| **BANK_CAP_USD** | `$1,000,000 USD` | Límite constante global del banco. |
+| **Precio Oráculo ETH/USD** | `$2000 USD` | Se asume un precio fijo para el test (2000 * 10^8, ya que Chainlink usa 8 decimales). |
+| **Token ERC-20** | `0xTokenA...` | Dirección de un token ERC-20 (Ej. USDC). |
+
+
+### Fase 1: Verificación de Roles Administrativos (RBAC)
+**Patrón Probado:** `AccessControl` y Principio de Mínimo Privilegio.
+
+| ID | Explicación de la Prueba | Cuenta | Entrada/Función | Resultado Esperado |
+| :--- | :--- | :--- | :--- | :--- |
+| 1.1 | Verificar que el administrador puede cambiar la dirección del Oráculo (requiere `CAP_MANAGER_ROLE`). | A | `setEthPriceFeedAddress(0xNewAddr)` | Éxito. La variable `s_priceFeedAddress` se actualiza. |
+| 1.2 | Verificar que un usuario estándar no puede realizar tareas administrativas. | B | `setEthPriceFeedAddress(0xNewAddr)` | REVERTIR con `Bank__Unauthorized()` (Implícita de `onlyRole`). |
+| 1.3 | Verificar que el administrador puede dar soporte a un nuevo token (requiere `TOKEN_MANAGER_ROLE`). | A | `addSupportedToken(0xTokenA, 0xPriceFeed, 18)` | Éxito. Se emite `TokenSupported`. |
+| 1.4 | Verificar que un usuario estándar no puede añadir un token. | B | `addSupportedToken(...)` | REVERTIR con `Bank__Unauthorized()`. |
+
+
+### Fase 2: Pausabilidad y Mitigación de DoS
+**Patrón Probado:** `Pausable` (herencia) y Prevención de Denegación de Servicio (DoS).
+
+| ID | Explicación de la Prueba | Cuenta | Entrada/Función | Resultado Esperado |
+| :--- | :--- | :--- | :--- | :--- |
+| 2.1 | Verificar que el administrador puede pausar el contrato (requiere `PAUSE_MANAGER_ROLE`). | A | `pause()` | Éxito. El estado interno cambia a pausado. |
+| 2.2 | Verificar que la función transaccional `deposit()` falla cuando está pausada. | B | `deposit()` (valor 0.1 ETH) | REVERTIR debido al modificador `whenNotPaused`. |
+| 2.3 | Verificar que el administrador puede despausar el contrato. | A | `unpause()` | Éxito. El estado interno cambia a activo. |
+| 2.4 | Verificar que `deposit()` funciona después de despausar. | B | `deposit()` (valor 0.1 ETH) | Éxito. Se emite `DepositSuccessful`. |
+
+
+### Fase 3: Operaciones con ETH y Lógica de Oráculos
+**Patrón Probado:** Conversión de valores (Multiplicar antes de dividir) y Lógica de límites de negocio (V8).
+
+| ID | Explicación de la Prueba | Cuenta | Entrada/Función | Resultado Esperado |
+| :--- | :--- | :--- | :--- | :--- |
+| 3.1 | Depósito normal (sin alcanzar el límite). | B | `deposit()` (0.5 ETH) | Éxito. `balances[B][address(0)]` se incrementa en 0.5 ETH. |
+| 3.2 | Límite Global USD (Fallo): Intentar exceder el límite de 1M USD. (Si 1 ETH = $2000, 500 ETH es el límite. Intentar depositar 501 ETH). | B | `deposit()` (501 ETH) | REVERTIR con el error `Bank__DepositExceedsCap` mostrando el límite en USD. |
+| 3.3 | Límite de Retiro TX (Fallo): Intentar retirar más del límite inmutable (1 ETH). | B | `withdraw(1.1 ETH)` | REVERTIR con `Bank__WithdrawalExceedsLimit`. |
+| 3.4 | Saldo Insuficiente (Fallo): Intentar retirar más de lo depositado (Saldo de B es 0.5 ETH). | B | `withdraw(0.6 ETH)` | REVERTIR con `Bank__InsufficientBalance`. |
+| 3.5 | Retiro Exitoso (CEI): Retirar 0.2 ETH. | B | `withdraw(0.2 ETH)` | Éxito. Verificación clave: El saldo se actualiza (`balances[B]` es 0.3 ETH) *antes* de que ocurra la transferencia de `call`. |
+| 3.6 | Verificar la Transferencia Segura. | B | Retiro exitoso anterior (3.5). | Éxito. Se debe usar la llamada de bajo nivel `call{value: amount}("")` en lugar de `transfer` o `send`. |
+
+
+### Fase 4: Operaciones ERC-20 (Multi-Token)
+**Patrón Probado:** `SafeERC20` para transferencias seguras y Mapeos Anidados para contabilidad multi-token.
+
+| ID | Explicación de la Prueba | Cuenta | Entrada/Función | Resultado Esperado |
+| :--- | :--- | :--- | :--- | :--- |
+| 4.1 | Depósito de Token (Aprobación Requerida): Asumir que `0xTokenA` está soportado (ver 1.3). | B | Previo: B llama `TokenA.approve(KipuBankV2, 50 TKN)`. Luego: `depositToken(0xTokenA, 50 TKN)` | Éxito. El contrato utiliza `safeTransferFrom` para mover 50 TKN de B al KipuBankV2. `balances[B][0xTokenA]` se incrementa. |
+| 4.2 | Depósito Fallido (Token No Soportado): Intentar depositar un token no registrado. | B | `depositToken(0xUnknownToken, 10 TKN)` | REVERTIR con `Bank__TokenNotSupported`. |
+| 4.3 | Retiro de Token Exitoso: Retirar 10 TKN. | B | `withdrawToken(0xTokenA, 10 TKN)` | Éxito. El contrato utiliza `safeTransfer` para enviar 10 TKN a B. `balances[B][0xTokenA]` se reduce. |
+| 4.4 | Retiro de Token (Fallo): Intentar retirar un token con saldo insuficiente. | B | `withdrawToken(0xTokenA, 100 TKN)` (Saldo restante 40 TKN) | REVERTIR con `Bank__InsufficientBalance`. |
+
+
+Hemos cubierto la inicialización, la seguridad administrativa (RBAC y Pausabilidad), la lógica de negocio (Oráculos, Límites) y las interacciones con tokens (SafeERC20).
+
 </details>
 
-<details>
-<summary><strong>FASE 2: Conversión de Valores y Límite Global (Oráculos)</strong></summary>
-<p>Objetivo: Probar la función <code>deposit()</code>. La lógica de negocio ahora debe usar Chainlink para convertir ETH/Wei ($10^{18}$ decimales) a USD ($10^8$ decimales) y aplicar el límite global.</p>
+---
 
-| ID | Función a Probar | Cuenta | Acción y Valor de Entrada | Resultado Esperado | Verificación Crítica |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| 2.1 | `deposit()` (Éxito) | USUARIO B | `Value`: 0.1 ETH (Gas: Estándar) | Éxito. | Se emite `DepositSuccessful`. <br> Verificar `getDepositCount()` (debe aumentar). <br> Verificar `balances[USUARIO B][address(0)]` (Mapeo anidado). |
-| 2.2 | `deposit()` (Fallo: Límite Global) | USUARIO B | `Value`: 5000 ETH (Un valor que exceda $1M USD, asumiendo un precio ETH alto) | REVERTIR. | La transacción falla con el error personalizado `Bank__DepositExceedsCap`. Confirma que el oráculo de Chainlink y la Función de conversión de decimales funcionan. |
-</details>
+## Diagramas de Arquitectura y Flujo
 
 <details>
-<summary><strong>FASE 3: Interacción Multi-Token (Mappings Anidados y CEI)</strong></summary>
-<p>Objetivo: Usar el token registrado en el Catálogo (<code>0x111...111</code>) para probar el sistema de contabilidad multi-token, basado en Mappings anidados.</p>
+<summary>Ver Diagramas (Mermaid)</summary>
 
-| ID | Función a Probar | Cuenta | Entradas Requeridas | Resultado Esperado | Verificación Crítica |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| 3.1 | `depositToken` | USUARIO B | `tokenAddress`: `0x111...111` <br> `amount`: `500000000000000000` (0.5 Token) | Éxito (asumiendo `approve()` previo). | Mapeo Anidado: Verificar `balances[USUARIO B][0x111...111]`. Debe ser 0.5 Token. |
-| 3.2 | `withdrawToken` (Fallo: Límite `immutable`) | USUARIO B | `tokenAddress`: `0x111...111` <br> `amount`: `2000000000000000000` (2 Token) | REVERTIR. | Falla con `Bank__WithdrawalExceedsLimit`. Confirma el cumplimiento de la variable `MAX_WITHDRAWAL_PER_TX` (`immutable`). |
-| 3.3 | `withdrawToken` (Éxito y CEI) | USUARIO B | `tokenAddress`: `0x111...111` <br> `amount`: `100000000000000000` (0.1 Token) | Éxito. | Patrón CEI: El saldo en el mapeo anidado (`balances`) se resta (Effect) antes de que se ejecute la transferencia de tokens (Interaction). Verificar que el nuevo saldo es 0.4 Token. |
-</details>
+### 1. Arquitectura General y Componentes
+```mermaid
+graph TD
+    subgraph "Actores"
+        Admin[Admin Dueno]
+        User[Usuario Estandar]
+    end
 
-<details>
-<summary><strong>FASE 4: Pausabilidad y Mitigación DoS (PAUSE_MANAGER_ROLE)</strong></summary>
-<p>Objetivo: Probar el interruptor de emergencia (<code>Pausable</code>), que mitiga los ataques de Denegación de Servicio (DoS).</p>
+    subgraph "Contrato KipuBankV2"
+        Core[Logica Principal KipuBankV2]
+        subgraph "Componentes Heredados OpenZeppelin"
+            RBAC(AccessControl)
+            Pause(Pausable)
+            SafeLib(SafeERC20)
+        end
+        Balances[Balances mapping anidado]
+        Core --- RBAC
+        Core --- Pause
+        Core --- SafeLib
+        Core --- Balances
+    end
 
-| ID | Acción | Función | Cuenta | Entradas | Resultado Esperado | Verificación Crítica |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 4.1 | Activar Emergencia | `pause()` (Write Contract) | ADMIN | N/A | Transacción Exitosa. | El contrato está ahora en estado `paused`. |
-| 4.2 | Prueba de Bloqueo | `deposit()` | USUARIO B | `Value`: 0.01 ETH | REVERTIR. | Falla con un error de `Pausable` (error de `whenNotPaused`). Esto valida que el Control de Acceso y la arquitectura de seguridad detienen las funciones críticas. |
-| 4.3 | Desactivar Emergencia | `unpause()` (Write Contract) | ADMIN | N/A | Transacción Exitosa. | El contrato regresa a estado activo. |
-| 4.4 | Reanudación | `deposit()` | USUARIO B | `Value`: 0.01 ETH | Éxito. | Se confirma que el flujo de negocio se reanuda correctamente. |
-</details>
+    subgraph "Dependencias Externas"
+        Oracle[Chainlink Oracle ETH USD]
+        Token[Contrato ERC-20 Ej USDC]
+    end
 
+    Admin -- "Gestiona RBAC" --> Core
+    User -- "Interactua deposit withdraw" --> Core
+
+    Core -- "Obtiene precio" --> Oracle
+    Core -- "Transfiere safeTransfer From" --> Token
+    User -- "Aprueba approve" --> Token
