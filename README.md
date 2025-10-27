@@ -1,71 +1,101 @@
-# KipuBankV2: Bóveda Multi-Token con Control de Acceso y Oráculos Chainlink
+# KipuBankV2: Plataforma de Bóveda Descentralizada Multi-Token y Multi-Rol
 
-**URL del Contrato Desplegado en Sepolia:** [https://sepolia.etherscan.io/address/0x70A910C10fAE01802f1aB9798773275B67aE5710]
+El proyecto KipuBankV2 representa la evolución a un contrato de producción a partir del contrato base KipuBank del Módulo 2. Este contrato simula una bóveda segura que gestiona depósitos en activos nativos (ETH) y tokens ERC-20, utilizando infraestructura descentralizada (Chainlink) para la validación de límites de valor.
 
----
+El código actualizado del contrato se encuentra en la carpeta /src.
 
-## 1. Explicación a Alto Nivel de las Mejoras
-
-`KipuBankV2` es la refactorización del contrato `KipuBank` original, evolucionando su arquitectura para cumplir con estándares de producción en términos de seguridad, control de acceso y escalabilidad.
-
-Las mejoras clave del Módulo 3 son:
-
-| Componente | Descripción de la Mejora | Fuente |
-| :--- | :--- | :--- |
-| **Control de Acceso (Roles)** | Implementación de `AccessControl` de OpenZeppelin para delegar permisos de forma granular, incluyendo `CAP_MANAGER_ROLE`, `TOKEN_MANAGER_ROLE`, y `PAUSE_MANAGER_ROLE`. | Requisito M3. |
-| **Oráculos de Chainlink** | Integración de Chainlink Data Feeds para convertir el valor de ETH a USD, permitiendo que el límite global (`BANK_CAP_USD`) se aplique en dólares, y no en unidades de ETH volátiles. | Requisito M3. |
-| **Soporte Multi-token** | El contrato ahora soporta depósitos y retiros de tokens ERC-20, utilizando un catálogo administrado (`s_tokenCatalog`) y mappings anidados (`balances`) para llevar la contabilidad por token. | Requisito M3. |
-| **Seguridad de Emergencia** | Herencia del contrato `Pausable` de OpenZeppelin, gestionado por el `PAUSE_MANAGER_ROLE`, para detener las funciones críticas (`deposit`, `withdraw`) ante amenazas de seguridad o fallos de oráculo. | Patrón de Seguridad. |
+**URL del Contrato Desplegado y verificado en Sepolia:** 
+  https://sepolia.etherscan.io/address/0x1a74a3A02a1868813Bd62D74F30A63efCA584912        
+  https://eth-sepolia.blockscout.com/address/0x1a74a3A02a1868813Bd62D74F30A63efCA584912?tab=contract
+  https://testnet.routescan.io/address/0x1a74a3A02a1868813Bd62D74F30A63efCA584912/contract/11155111/code
+  https://repo.sourcify.dev/11155111/0x1a74a3A02a1868813Bd62D74F30A63efCA584912
 
 ---
 
-## 2. Instrucciones de Despliegue e Interacción
+## Mejoras de Arquitectura y Razones de Diseño
 
-El código final se encuentra en la carpeta `/src/KipuBankV2.sol`.
-
-### A. Despliegue
-
-1.  **Entorno:** Utilizar Remix IDE, conectado a la red de prueba Sepolia a través de Injected Provider (MetaMask).
-2.  **Versión del Compilador:** Solidity `^0.8.26`.
-3.  **Argumentos del Constructor:** Se requieren dos argumentos para la inicialización:
-    * `priceFeedAddress (address)`: La dirección del Data Feed ETH/USD en Sepolia.
-        * *Valor de Ejemplo (Sepolia):* `0x694AA1769357215Ef4bE215cd2aa0325eEba1cda`
-    * `maxWithdrawalAmount (uint256)`: El límite máximo de retiro por transacción, expresado en Wei.
-        * *Valor de Ejemplo (1 ETH):* `1000000000000000000`
-
-### B. Interacción (Funcionalidades Clave)
-
-Todas las interacciones se realizan a través de la interfaz de Remix o Etherscan ("Write Contract").
-
-| Rol / Usuario | Función | Propósito |
-| :--- | :--- | :--- |
-| Desplegador | `addSupportedToken()` | Registrar nuevos tokens ERC-20 y sus oráculos de Chainlink (ejecutado por `TOKEN_MANAGER_ROLE`). |
-| Desplegador | `pause()` / `unpause()` | Activar/desactivar el interruptor de emergencia (ejecutado por `PAUSE_MANAGER_ROLE`). |
-| Usuario | `deposit()` | Depositar ETH. Requiere `value` (ETH) y verifica el `BANK_CAP_USD` usando el oráculo. |
-| Usuario | `withdrawToken()` | Retirar tokens ERC-20, sujeto al límite `MAX_WITHDRAWAL_PER_TX`. |
-
----
-
-## 3. Decisiones de Diseño Importantes y Trade-offs
-
-### A. Seguridad y Patrones
-
-* **Patrón CEI estricto:** Todas las funciones transaccionales (`deposit`, `withdraw`, `withdrawToken`) siguen el patrón Checks-Effects-Interactions para prevenir ataques de reentrada. La actualización de saldos (EFFECTS) ocurre siempre antes de la transferencia externa (INTERACTIONS).
-* **Manejo Seguro de Transferencias:** Se utiliza `SafeERC20` para tokens ERC-20 y el método de bajo nivel `.call{value: amount}("")` para transferencias de ETH nativo.
-* **Errores Personalizados:** Se emplean Custom Errors (`error Bank__...`) en lugar de `require(..., "string")`, lo que mejora la legibilidad, la capacidad de depuración y optimiza el gas.
-
-### B. Arquitectura de Variables y Datos
-
-* **Inmutabilidad:** `BANK_CAP_USD` se define como `constant` y `MAX_WITHDRAWAL_PER_TX` como `immutable`, lo cual optimiza el gas ya que estos valores se almacenan en el bytecode o se fijan durante el despliegue.
-* **Aritmética Segura:** La lógica de conversión de decimales en `_getUsdValueFromWei` implementa la regla de multiplicar antes de dividir para preservar la precisión al convertir de Wei ($10^{18}$ decimales) a USD ($10^{8}$ decimales).
-* **Catálogo de Tokens:** La configuración de tokens ERC-20 se almacena en una `struct` dentro de un `mapping` (`s_tokenCatalog`), agrupando `priceFeedAddress` y `tokenDecimals`. Esta estructura mejora la eficiencia de lectura de almacenamiento (SLOAD).
-
----
-
-## 4. Casos de Prueba (Módulo 3)
+La refactorización de KipuBank a KipuBankV2 se centró en mejorar la seguridad, la escalabilidad (soporte multi-token) y la solidez financiera (límites basados en USD), cumpliendo con los requisitos avanzados del proyecto.
 
 <details>
-<summary><strong>🧪 Casos de Prueba Detallados (Módulo 3)</strong></summary>
+<summary>Ver Detalles de Arquitectura y Patrones de Diseño</summary>
+
+| Área de Mejora | Implementación en KipuBankV2 | Razón de la Decisión / Patrón de Diseño |
+| :--- | :--- | :--- |
+| **Control de Acceso** | Uso de `AccessControl` de OpenZeppelin. Roles definidos (`PAUSE_MANAGER_ROLE`, `CAP_MANAGER_ROLE`, `TOKEN_MANAGER_ROLE`). | Migración del patrón simple `onlyOwner` a RBAC (Control de Acceso Basado en Roles). Esto aplica el Principio de Mínimo Privilegio a las tareas administrativas, mejorando la seguridad. |
+| **Soporte Multi-token** | Mapeos anidados (`balances[address user][address token]`) y uso de `address(0)` para ETH. | Permite la contabilidad interna de múltiples activos ERC-20 y ETH, haciendo la bóveda más versátil. |
+| **Seguridad ERC-20** | Uso de la librería `SafeERC20` de OpenZeppelin (`safeTransferFrom`, `safeTransfer`). | Garantiza interacciones seguras con tokens que podrían no implementar el estándar ERC-20 correctamente. |
+| **Límite Global** | Integración de Chainlink Data Feeds (`AggregatorV3Interface`) y constante `BANK_CAP_USD`. Implementación de la función `_getUsdValueFromWei`. | El límite global de depósitos se controla en dólares estadounidenses (USD), no en un valor volátil de ETH, proporcionando estabilidad financiera al protocolo. |
+| **Aritmética Segura** | Utiliza la regla de "multiplicar antes de dividir" para manejar la conversión de decimales de Wei ($10^{18}$) a Chainlink USD ($10^8$). | Evita errores de truncamiento y pérdida de precisión. |
+| **Pausabilidad** | Herencia de `Pausable` de OpenZeppelin. Funciones protegidas con `whenNotPaused`. | Provee un interruptor de emergencia (Emergency Stop) para mitigar rápidamente ataques de Denegación de Servicio (DoS) o vulnerabilidades críticas, controlado por el `PAUSE_MANAGER_ROLE`. |
+| **Eficiencia de Gas** | Uso de variables `constant` (`BANK_CAP_USD`) e `immutable` (`MAX_WITHDRAWAL_PER_TX`) y bloques `unchecked`. | Minimiza el costo de lectura de variables de estado (no requiere `SLOAD`) y optimiza el gas para operaciones de contadores. |
+
+</details>
+
+---
+
+## Decisiones de Diseño Importantes (Trade-offs)
+
+<details>
+<summary>Ver Decisiones de Implementación y Trade-offs</summary>
+
+### 1. Patrón Checks-Effects-Interactions (CEI)
+El contrato aplica rigurosamente el patrón CEI para mitigar ataques de Reentrancy.
+* En la función `withdraw`, el saldo del usuario se decrementa (`balances[msg.sender] = ...`) en la sección *Effects* antes de realizar la llamada externa (`call{value: amountToWithdraw}("")`) en la sección *Interactions*.
+
+### 2. Transferencias Nativas Seguras
+Para las transferencias de Ether, se utiliza la llamada de bajo nivel `call` en lugar de `transfer` o `send`.
+* **Razón:** `transfer` y `send` están limitados a 2300 unidades de gas, lo que puede causar fallos si el receptor es un contrato inteligente con lógica de fallback más compleja. El uso de `call` minimiza esta limitación y es considerado la práctica moderna y segura.
+
+### 3. Precisión Aritmética y Conversión de Decimales
+La función interna `_getUsdValueFromWei` es crucial para la lógica de límites.
+* La conversión de ETH (18 decimales) al precio de Chainlink USD (8 decimales) requiere manejar la disparidad en la precisión.
+* La fórmula `(ethAmount * ethPriceUsd) / 10**18` aplica la técnica de multiplicar antes de dividir para preservar la precisión y evitar el truncamiento a cero de números pequeños, un error común en Solidity.
+
+### 4. Uso de `unchecked` para Optimización
+Se utiliza el bloque `unchecked` en la sección *Effects* de `deposit()` y `withdraw()` para operaciones donde la seguridad ya ha sido verificada en los *Checks*.
+* Específicamente, `_depositCount++` se envuelve en `unchecked`. Dado que el contador solo se incrementa, no hay riesgo de overflow que comprometa la lógica de negocio; esta omisión de comprobación de desbordamiento acelera la ejecución y reduce el costo de gas.
+
+</details>
+
+---
+
+## Instrucciones de Despliegue e Interacción
+
+<details>
+<summary>Ver Instrucciones de Despliegue e Interacción</summary>
+
+El contrato KipuBankV2 se debe desplegar en una testnet (como Sepolia) que sea compatible con los Data Feeds de Chainlink. Se recomienda utilizar Remix IDE conectado a MetaMask (`Injected Provider - MetaMask`) para la interacción.
+
+### 1. Requisitos del Constructor
+El contrato requiere dos argumentos obligatorios en el momento del despliegue:
+
+| Parámetro | Tipo | Descripción | Ejemplo (Sepolia) |
+| :--- | :--- | :--- | :--- |
+| `priceFeedAddress` | `address` | Dirección del oráculo ETH/USD de Chainlink en la red de destino. | `0x694AA1769357215Ef4bEca1d26543d95Bdc24Ff6` |
+| `maxWithdrawalAmount` | `uint256` | Límite máximo (en Wei) que un usuario puede retirar por transacción. | `1000000000000000000` (1 ETH) |
+
+
+**Nota sobre Roles:** La dirección que realiza el despliegue (`msg.sender` en el constructor) recibe automáticamente todos los roles administrativos: `DEFAULT_ADMIN_ROLE`, `CAP_MANAGER_ROLE`, `TOKEN_MANAGER_ROLE`, y `PAUSE_MANAGER_ROLE`.
+
+### 2. Interacción con Funcionalidades Clave
+
+| Funcionalidad | Función | Rol Requerido | Notas de Interacción |
+| :--- | :--- | :--- | :--- |
+| Depósito ETH | `deposit()` | Cualquiera | Función `external payable`. Debe ser llamada con valor (`msg.value`). El contrato verifica el límite de $1,000,000 USD. |
+| Retiro ETH | `withdraw(amount)` | Cualquiera | La cantidad debe respetar `MAX_WITHDRAWAL_PER_TX` y el saldo del usuario. |
+| Administración | `setEthPriceFeedAddress(addr)` | `CAP_MANAGER_ROLE` | Permite actualizar la dirección del oráculo. |
+| Añadir Token | `addSupportedToken(token, priceFeed, dec)` | `TOKEN_MANAGER_ROLE` | Registra un nuevo token ERC-20 y su oráculo asociado. |
+| Depósito ERC-20 | `depositToken(token, amount)` | Cualquiera | Requiere que el usuario haya llamado `approve()` previamente en el contrato del token, ya que usa `safeTransferFrom`. |
+| Parada de Emergencia | `pause() / unpause()` | `PAUSE_MANAGER_ROLE` | Detiene/reactiva todas las funciones transaccionales protegidas por `whenNotPaused`. |
+
+</details>
+
+---
+
+## Casos de Prueba: KipuBankV2
+
+<details>
+<summary><strong> Casos de Prueba detallados </strong></summary>
 
 ### Contexto de Prueba
 | Contexto | Descripción |
