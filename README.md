@@ -73,7 +73,7 @@ El contrato requiere dos argumentos obligatorios en el momento del despliegue:
 
 | Parámetro | Tipo | Descripción | Ejemplo (Sepolia) |
 | :--- | :--- | :--- | :--- |
-| `priceFeedAddress` | `address` | Dirección del oráculo ETH/USD de Chainlink en la red de destino. | `0x694AA1769357215Ef4bEca1d26543d95Bdc24Ff6` |
+| `priceFeedAddress` | `address` | Dirección del oráculo ETH/USD de Chainlink en la red de destino. | `0x694AA1769357215DE4FAC081bf1f309aDC325306` |
 | `maxWithdrawalAmount` | `uint256` | Límite máximo (en Wei) que un usuario puede retirar por transacción. | `1000000000000000000` (1 ETH) |
 
 
