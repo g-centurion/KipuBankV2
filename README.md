@@ -14,7 +14,7 @@ El código actualizado del contrato se encuentra en la carpeta /src.
 
 ---
 
-## Mejoras de Arquitectura y Razones de Diseño
+## 1) Mejoras de Arquitectura y Razones de Diseño
 
 La refactorización de KipuBank a KipuBankV2 se centró en mejorar la seguridad, la escalabilidad (soporte multi-token) y la solidez financiera (límites basados en USD), cumpliendo con los requisitos avanzados del proyecto.
 
@@ -35,7 +35,7 @@ La refactorización de KipuBank a KipuBankV2 se centró en mejorar la seguridad,
 
 ---
 
-## Decisiones de Diseño Importantes (Trade-offs)
+## 2) Decisiones de Diseño Importantes (Trade-offs)
 
 <details>
 <summary>Ver Decisiones de Implementación y Trade-offs</summary>
@@ -61,7 +61,7 @@ Se utiliza el bloque `unchecked` en la sección *Effects* de `deposit()` y `with
 
 ---
 
-## Instrucciones de Despliegue e Interacción
+## 3) Instrucciones de Despliegue e Interacción
 
 <details>
 <summary>Ver Instrucciones de Despliegue e Interacción</summary>
@@ -94,7 +94,7 @@ El contrato requiere dos argumentos obligatorios en el momento del despliegue:
 
 ---
 
-## Documento de Casos de Prueba: KipuBankV2
+## 4) Documento de Casos de Prueba: KipuBankV2
 
 <details>
 <summary>Ver Plan de Pruebas Completo</summary>
@@ -165,27 +165,26 @@ Hemos cubierto la inicialización, la seguridad administrativa (RBAC y Pausabili
 
 ---
 
-## Diagramas de Arquitectura y Flujo
+## 5) Diagramas de Arquitectura y Flujo
 
 <details>
-<summary>Ver Diagramas (Mermaid)</summary>
+<summary>Ver Diagrama 1: Arquitectura General y Componentes</summary>
 
-### 1. Arquitectura General y Componentes
 ```mermaid
 graph TD
     subgraph "Actores"
-        Admin[Admin Dueno]
-        User[Usuario Estandar]
+        Admin["Admin Dueno"]
+        User["Usuario Estandar"]
     end
 
     subgraph "Contrato KipuBankV2"
-        Core[Logica Principal KipuBankV2]
+        Core["Logica Principal KipuBankV2"]
         subgraph "Componentes Heredados OpenZeppelin"
             RBAC(AccessControl)
             Pause(Pausable)
             SafeLib(SafeERC20)
         end
-        Balances[Balances mapping anidado]
+        Balances["Balances mapping anidado"]
         Core --- RBAC
         Core --- Pause
         Core --- SafeLib
@@ -193,8 +192,8 @@ graph TD
     end
 
     subgraph "Dependencias Externas"
-        Oracle[Chainlink Oracle ETH USD]
-        Token[Contrato ERC-20 Ej USDC]
+        Oracle["Chainlink Oracle ETH USD"]
+        Token["Contrato ERC-20 Ej USDC"]
     end
 
     Admin -- "Gestiona RBAC" --> Core
@@ -203,3 +202,210 @@ graph TD
     Core -- "Obtiene precio" --> Oracle
     Core -- "Transfiere safeTransfer From" --> Token
     User -- "Aprueba approve" --> Token
+````
+
+<details>
+<summary>Ver Diagrama 2: Control de Acceso Basado en Roles (RBAC)</summary>
+
+```mermaid
+graph LR
+    Admin("Deployer y Admin") -- "Posee" --> DEFAULT_ADMIN_ROLE
+
+    subgraph "Roles de Gestion"
+        DEFAULT_ADMIN_ROLE -- "Otorga Revoca" --> PAUSE_MANAGER_ROLE
+        DEFAULT_ADMIN_ROLE -- "Otorga Revoca" --> CAP_MANAGER_ROLE
+        DEFAULT_ADMIN_ROLE -- "Otorga Revoca" --> TOKEN_MANAGER_ROLE
+    end
+
+    subgraph "Funciones Protegidas"
+        F1["pause o unpause"]
+        F2["setEthPriceFeedAddress"]
+        F3["addSupportedToken"]
+    end
+
+    PAUSE_MANAGER_ROLE -- "Ejecuta" --> F1
+    CAP_MANAGER_ROLE -- "Ejecuta" --> F2
+    TOKEN_MANAGER_ROLE -- "Ejecuta" --> F3
+````
+
+<details>
+<summary>Ver Diagrama 3: Flujo de Deposito de ETH (Verificacion de Limite USD)</summary\>
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant KipuBankV2
+    participant Oracle as "Chainlink ETH USD"
+
+    User->>KipuBankV2: "deposit() con 0.5 ETH"
+    activate KipuBankV2
+    KipuBankV2->>KipuBankV2: "1. Verificar whenNotPaused"
+    KipuBankV2->>Oracle: "2. Obtener precio ETH"
+    activate Oracle
+    Oracle-->>KipuBankV2: "Retorna precio 2000"
+    deactivate Oracle
+    KipuBankV2->>KipuBankV2: "3. Calcular valor USD del deposito"
+    KipuBankV2->>KipuBankV2: "4. Verificar Limite Global < BANK_CAP_USD"
+    KipuBankV2->>KipuBankV2: "5. Effects Actualizar balances"
+    KipuBankV2-->>User: "Exito Emite DepositSuccessful"
+    deactivate KipuBankV2
+````
+
+<details>
+<summary>Ver Diagrama 4: Flujo de Retiro de ETH (Patron Checks-Effects-Interactions)</summary\>
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant KipuBankV2
+
+    User->>KipuBankV2: "withdraw amount 0.2 ETH"
+    activate KipuBankV2
+
+    note over KipuBankV2: "Inicio Checks"
+    KipuBankV2->>KipuBankV2: "1. Verificar whenNotPaused"
+    KipuBankV2->>KipuBankV2: "2. Verificar amount <= MAX_TX"
+    KipuBankV2->>KipuBankV2: "3. Verificar amount <= Saldo del Usuario"
+    note over KipuBankV2: "Fin Checks"
+
+    note over KipuBankV2: "Inicio Effects Patron CEI"
+    KipuBankV2->>KipuBankV2: "4. Actualizar balances User -= amount"
+    note over KipuBankV2: "Fin Effects"
+
+    note over KipuBankV2: "Inicio Interactions"
+    KipuBankV2->>User: "5. Enviar ETH via call"
+    note over KipuBankV2: "Fin Interactions"
+
+    KipuBankV2-->>User: "Exito"
+    deactivate KipuBankV2
+````
+
+<details>
+<summary>Ver Diagrama 5: Flujo de Deposito de Token ERC-20</summary\>
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Token as "Contrato ERC-20"
+    participant KipuBankV2
+
+    note over User, KipuBankV2: "Prerrequisito Aprobacion"
+    User->>Token: "1. approve KipuBankV2 amount"
+    activate Token
+    Token-->>User: "Exito"
+    deactivate Token
+
+    note over User, KipuBankV2: "Flujo de Deposito"
+    User->>KipuBankV2: "2. depositToken Token amount"
+    activate KipuBankV2
+    KipuBankV2->>KipuBankV2: "3. Verificar whenNotPaused"
+    KipuBankV2->>KipuBankV2: "4. Verificar Token es soportado"
+    KipuBankV2->>Token: "5. safeTransferFrom User KipuBankV2 amount"
+    activate Token
+    Token-->>KipuBankV2: "Transfiere tokens"
+    deactivate Token
+    KipuBankV2->>KipuBankV2: "6. Effects Actualizar balances"
+    KipuBankV2-->>User: "Exito"
+    deactivate KipuBankV2
+````
+
+<details>
+<summary>Ver Diagrama 6: Flujo de Retiro de Token ERC-20 (Patron CEI)</summary\>
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant KipuBankV2
+    participant Token as "Contrato ERC-20"
+
+    User->>KipuBankV2: "withdrawToken Token amount"
+    activate KipuBankV2
+
+    note over KipuBankV2: "Inicio Checks"
+    KipuBankV2->>KipuBankV2: "1. Verificar whenNotPaused"
+    KipuBankV2->>KipuBankV2: "2. Verificar amount <= Saldo Token Usuario"
+    note over KipuBankV2: "Fin Checks"
+
+    note over KipuBankV2: "Inicio Effects Patron CEI"
+    KipuBankV2->>KipuBankV2: "3. Actualizar balances User Token -= amount"
+    note over KipuBankV2: "Fin Effects"
+
+    note over KipuBankV2: "Inicio Interactions"
+    KipuBankV2->>Token: "4. safeTransfer User amount"
+    activate Token
+    Token-->>KipuBankV2: "Transfiere tokens a User"
+    deactivate Token
+    note over KipuBankV2: "Fin Interactions"
+
+    KipuBankV2-->>User: "Exito"
+    deactivate KipuBankV2
+````
+
+<details>
+<summary>Ver Diagrama 7: Flujo de Pausa de Emergencia (Pausable)</summary\>
+
+```mermaid
+sequenceDiagram
+    actor Admin as "Admin PAUSE_MANAGER_ROLE"
+    actor User
+    participant KipuBankV2
+
+    Admin->>KipuBankV2: "1. pause()"
+    activate KipuBankV2
+    KipuBankV2-->>Admin: "Exito, contrato pausado"
+    deactivate KipuBankV2
+
+    User->>KipuBankV2: "2. deposit()"
+    activate KipuBankV2
+    KipuBankV2->>KipuBankV2: "3. Falla check: whenNotPaused"
+    KipuBankV2-->>User: "REVERTIR Pausado"
+    deactivate KipuBankV2
+
+    Admin->>KipuBankV2: "4. unpause()"
+    activate KipuBankV2
+    KipuBankV2-->>Admin: "Exito, contrato reactivado"
+    deactivate KipuBankV2
+
+    User->>KipuBankV2: "5. deposit()"
+    activate KipuBankV2
+    KipuBankV2->>KipuBankV2: "6. Exito check: whenNotPaused"
+    KipuBankV2-->>User: "Exito"
+    deactivate KipuBankV2
+````
+
+<details>
+<summary>Ver Diagrama 8: Flujo de Deposito Fallido (Excede Limite USD)</summary\>
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant KipuBankV2
+    participant Oracle as "Chainlink ETH USD"
+
+    note over User, KipuBankV2: "Banco casi lleno. Limite 1M USD."
+    User->>KipuBankV2: "deposit() con 501 ETH"
+    activate KipuBankV2
+    KipuBankV2->>KipuBankV2: "1. Verificar whenNotPaused"
+    KipuBankV2->>Oracle: "2. Obtener precio ETH"
+    activate Oracle
+    Oracle-->>KipuBankV2: "Retorna precio 2000"
+    deactivate Oracle
+    KipuBankV2->>KipuBankV2: "3. Calcular valor USD 501x2000=1002000"
+    KipuBankV2->>KipuBankV2: "4. Falla check: Limite Global < BANK_CAP_USD"
+    KipuBankV2-->>User: "REVERTIR Bank__DepositExceedsCap"
+    deactivate KipuBankV2
+````
+
+<details>
+<summary>Ver Diagrama 9: Logica Interna de Calculo USD (getUsdValueFromWei)</summary\>
+
+```mermaid
+graph TD
+    Start("Inicio _getUsdValueFromWei") --> GetPrice("Obtener precio ETH de Chainlink")
+    GetPrice --> CheckStale("Verificar si el precio es valido o esta obsoleto")
+    CheckStale -- "Precio Valido" --> Calculate("Calcular valor: ethAmount x ethPriceUsd")
+    CheckStale -- "Precio No Valido" --> Revert1("REVERTIR Error de Oraculo")
+    Calculate --> Adjust("Ajustar decimales: resultado division 10e18")
+    Adjust --> End("Fin: Retornar valor en USD")
+````
+
